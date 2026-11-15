@@ -615,36 +615,3 @@ private suspend fun reviseClip(
             }
         }
     }
-
-    val body = MultipartBody.Builder()
-        .setType(MultipartBody.FORM)
-        .addFormDataPart("file", name, videoBody)
-        .addFormDataPart("instruction", instruction)
-        .addFormDataPart(
-            "clip_count",
-            count.coerceIn(1, 10).toString()
-        )
-        .addFormDataPart(
-            "max_duration",
-            maxDuration.coerceIn(8, 180).toString()
-        )
-        .build()
-
-    val response = http.newCall(
-        Request.Builder()
-            .url(apiUrl("process"))
-            .post(body)
-            .build()
-    ).execute()
-
-    val raw = response.body?.string().orEmpty()
-
-    if (!response.isSuccessful) {
-        error("Server ${response.code}: $raw")
-    }
-
-    val json = JSONObject(raw)
-    val array = json.getJSONArray("clips")
-
-    val resultClips = (0 until array.length()).map { i ->
-        val item = array.getJSONObject(
