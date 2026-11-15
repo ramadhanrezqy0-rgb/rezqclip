@@ -1,5 +1,6 @@
 package com.example.autoclipai
 
+import androidx.activity.compose.setContent
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
@@ -487,6 +488,115 @@ private suspend fun processVideo(
     count: Int,
     maxDuration: Int
 ): ProcessResult = withContext(Dispatchers.IO) {
+
+    val document = DocumentFile.fromSingleUri(ctx, uri)
+    val name = document?.name ?: "video.mp4"
+
+    val videoBody = object : RequestBody() {
+        override fun contentType() = "video/mp4".toMediaType()
+
+        override fun contentLength() = document?.length() ?: -1L
+
+        override fun writeTo(sink: BufferedSink) {
+            val stream = ctx.contentResolver.openInputStream(uri)
+                ?: error("Tidak dapat membaca video.")
+
+            stream.source().use { source ->
+                sink.writeAll(source)
+            }
+        }
+    }
+
+    val body = MultipartBody.Builder()
+        .setType(MultipartBody.FORM)
+        .addFormDataPart("file", name, videoBody)
+        .addFormDataPart("instruction", instruction)
+        .addFormDataPart(
+            "clip_count",
+            count.coerceIn(1, 10).toString()
+        )
+        .addFormDataPart(
+            "max_duration",
+            maxDuration.coerceIn(8, 180).toString()
+        )
+        .build()
+
+    val response = http.newCall(
+        Request.Builder()
+            .url(apiUrl("process"))
+            .post(body)
+            .build()
+    ).execute()
+
+    val raw = response.body?.string().orEmpty()
+
+    if (!response.isSuccessful) {
+        error("Server ${response.code}: $raw")
+    }
+
+    val json = JSONObject(raw)
+    val array = json.getJSONArray("clips")
+
+    val resultClips = (0 until array.length()).map { i ->
+        val item = array.getJSONObject(i)
+
+        ClipResult(
+            item.getString("name"),
+            apiUrl(item.getString("url")),
+            item.optString("reason"),
+            item.optDouble("start"),
+            item.optDouble("end"),
+            apiUrl(item.optString("subtitle_url"))
+        )
+    }
+
+    ProcessResult(
+        json.getString("job_id"),
+        resultClips,
+        json.optDouble("source_duration").toFloat()
+    )
+}
+
+private suspend fun reviseClip(
+    job: String,
+    index: Int,
+    start: Double,
+    end: Double,
+    subtitle: String
+): ClipResult = withContext(Dispatchers.IO) {
+
+    val body = MultipartBody.Builder()
+        .setType(MultipartBody.FORM)
+        .addFormDataPart("start", start.toString())
+        .addFormDataPart("end", end.toString())
+        .addFormDataPart("subtitle_text", subtitle)
+        .addFormDataPart("burn_subtitles", "true")
+        .build()
+
+    val response = http.newCall(
+        Request.Builder()
+            .url(apiUrl("revise/$job/$index"))
+            .post(body)
+            .build()
+    ).execute()
+
+    val raw = response.body?.string().orEmpty()
+
+    if (!response.isSuccessful) {
+        error("Server ${response.code}: $raw")
+    }
+
+    val item = JSONObject(raw)
+
+    ClipResult(
+        item.getString("name"),
+        apiUrl(item.getString("url")),
+        item.optString("reason"),
+        item.optDouble("start"),
+        item.optDouble("end"),
+        apiUrl(item.optString("subtitle_url"))
+    )
+}
 
     val document = DocumentFile.fromSingleUri(ctx, uri)
     val name = document?.name ?: "video.mp4"
