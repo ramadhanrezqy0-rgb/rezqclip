@@ -44,26 +44,69 @@ def duration(path):
 
 
 def openai_client():
+def groq_client():
     try:
-        from openai import OpenAI
+        from groq import Groq
     except ImportError as exc:
-        raise RuntimeError("Paket openai belum terpasang. Jalankan pip install -r requirements.txt.") from exc
-    return OpenAI()
+        raise RuntimeError(
+            "Paket groq belum terpasang. "
+            "Tambahkan groq di requirements.txt."
+        ) from exc
+
+    key = os.getenv("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("GROQ_API_KEY belum diatur.")
+
+    return Groq(api_key=key)
 
 
 def transcribe(source):
-    audio = UPLOADS / f"{source.stem}.mp3"
+    audio_dir = UPLOADS / f"{source.stem}_audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
     try:
-        run(["ffmpeg", "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", str(audio)])
-        with audio.open("rb") as f:
-            result = openai_client().audio.transcriptions.create(
-                model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1"),
-                file=f, response_format="verbose_json", timestamp_granularities=["segment"])
-        segs = [{"start": float(s.start), "end": float(s.end), "text": str(s.text).strip()}
-                for s in (getattr(result, "segments", None) or [])]
-        return segs, getattr(result, "text", "") or ""
+        pattern = audio_dir / "part_%03d.mp3"
+
+        run([
+            "ffmpeg", "-y", "-i", str(source),
+            "-vn", "-map", "0:a:0",
+            "-ac", "1", "-ar", "16000",
+            "-b:a", "64k",
+            "-f", "segment",
+            "-segment_time", "900",
+            "-reset_timestamps", "1",
+            str(pattern)
+        ])
+
+        client = groq_client()
+        all_segments = []
+        all_text = []
+
+        for index, audio in enumerate(sorted(audio_dir.glob("part_*.mp3"))):
+            with audio.open("rb") as f:
+                result = client.audio.transcriptions.create(
+                    model="whisper-large-v3-turbo",
+                    file=f,
+                    language="id",
+                    response_format="verbose_json",
+                    timestamp_granularities=["segment"]
+                )
+
+            offset = index * 900
+
+            for s in (getattr(result, "segments", None) or []):
+                all_segments.append({
+                    "start": float(s.start) + offset,
+                    "end": float(s.end) + offset,
+                    "text": str(s.text).strip()
+                })
+
+            all_text.append(getattr(result, "text", "") or "")
+
+        return all_segments, " ".join(all_text)
+
     finally:
-        audio.unlink(missing_ok=True)
+        shutil.rmtree(audio_dir, ignore_errors=True)
 
 
 def stamp(t):
@@ -88,33 +131,67 @@ def write_srt(segments, start, end, path):
 
 
 def choose_ranges(transcript_segments, instruction, total, count, max_len):
-    transcript = "\n".join(f'[{s["start"]:.1f}-{s["end"]:.1f}] {s["text"]}' for s in transcript_segments)
-    response = openai_client().chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"), temperature=0.2,
+def choose_ranges(transcript_segments, instruction, total, count, max_len):
+    transcript = "\n".join(
+        f'[{s["start"]:.1f}-{s["end"]:.1f}] {s["text"]}'
+        for s in transcript_segments
+    )
+
+    response = groq_client().chat.completions.create(
+        model="openai/gpt-oss-20b",
+        temperature=0.2,
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": (
-                "You are a careful short-video editor. Choose distinct timestamp ranges from "
-                "the transcript that best match the user's instruction. Preserve context, setup "
-                "and punchlines. Do not invent content. Return JSON {clips:[{start,end,title,reason}]}. "
-                "Each range must be 8 seconds or longer, at most the requested max duration, "
-                "inside the source duration, and avoid substantial overlap.")},
-            {"role": "user", "content": (
-                f"Instruction: {instruction}\nVideo duration: {total}\nClip count: {count}\n"
-                f"Maximum seconds per clip: {max_len}\nTranscript:\n{transcript[:50000]}")}
-        ])
+            {
+                "role": "system",
+                "content": (
+                    "You are a careful short-video editor. "
+                    "Choose distinct timestamp ranges from the transcript "
+                    "that best match the user's instruction. "
+                    "Preserve context, setup and punchlines. "
+                    "Do not invent content. "
+                    "Return JSON {clips:[{start,end,title,reason}]}. "
+                    "Each range must be 8 seconds or longer, "
+                    "at most the requested max duration, "
+                    "inside the source duration, and avoid substantial overlap."
+                )
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Instruction: {instruction}\n"
+                    f"Video duration: {total}\n"
+                    f"Clip count: {count}\n"
+                    f"Maximum seconds per clip: {max_len}\n"
+                    f"Transcript:\n{transcript[:50000]}"
+                )
+            }
+        ]
+    )
+
     data = json.loads(response.choices[0].message.content or "{}")
     chosen = []
+
     for c in data.get("clips", [])[:count]:
         try:
-            a, b = max(0, float(c["start"])), min(total, float(c["end"]))
+            a = max(0, float(c["start"]))
+            b = min(total, float(c["end"]))
         except (KeyError, TypeError, ValueError):
             continue
+
         if 8 <= b-a <= max_len:
-            chosen.append({"start": a, "end": b, "title": str(c.get("title", "Clip AI"))[:80],
-                           "reason": str(c.get("reason", ""))[:250]})
+            chosen.append({
+                "start": a,
+                "end": b,
+                "title": str(c.get("title", "Clip AI"))[:80],
+                "reason": str(c.get("reason", ""))[:250]
+            })
+
     if not chosen:
-        raise RuntimeError("AI tidak menemukan bagian sesuai instruksi. Coba perintah lain.")
+        raise RuntimeError(
+            "AI tidak menemukan bagian sesuai instruksi. Coba perintah lain."
+        )
+
     return chosen
 
 
@@ -134,13 +211,17 @@ def render(source, job, index, start, end, segments, burn_subtitles=True):
          "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)])
     return {"name": f"Clip {index}", "url": f"/clips/{name}",
             "subtitle_url": f"/subtitles/{srt.name}", "start": round(start, 1), "end": round(end, 1)}
-
-
 @app.get("/")
 def health():
-    return {"status": "ok", "version": "0.5.0", "ai_ready": bool(os.getenv("OPENAI_API_KEY")),
-            "ffmpeg_ready": shutil.which("ffmpeg") is not None,
-            "message": "AI siap." if os.getenv("OPENAI_API_KEY") else "OPENAI_API_KEY belum diatur di server."}
+    ready = bool(os.getenv("GROQ_API_KEY"))
+
+    return {
+        "status": "ok",
+        "version": "0.6.0",
+        "ai_ready": ready,
+        "ffmpeg_ready": shutil.which("ffmpeg") is not None,
+        "message": "Groq AI siap." if ready else "GROQ_API_KEY belum diatur."
+    }
 
 
 @app.post("/process")
@@ -154,8 +235,8 @@ async def process(file: UploadFile = File(...), instruction: str = Form("Cari ba
         raise HTTPException(400, "Jumlah clip harus 1–10.")
     if not 8 <= max_duration <= 180:
         raise HTTPException(400, "Durasi harus 8–180 detik.")
-    if not os.getenv("OPENAI_API_KEY"):
-        raise HTTPException(503, "AI belum dikonfigurasi. Atur OPENAI_API_KEY di server terlebih dahulu.")
+    if not os.getenv("GROQ_API_KEY"):
+    raise HTTPException(503, "AI belum dikonfigurasi. Atur GROQ_API_KEY di SnapDeploy.")
 
     suffix = Path(file.filename or "video.mp4").suffix.lower()
     if suffix not in {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}:
