@@ -228,7 +228,10 @@ async def process(file: UploadFile = File(...), instruction: str = Form("Cari ba
     if not 8 <= max_duration <= 180:
         raise HTTPException(400, "Durasi harus 8–180 detik.")
     if not os.getenv("GROQ_API_KEY"):
-    raise HTTPException(503, "AI belum dikonfigurasi. Atur GROQ_API_KEY di SnapDeploy.")
+    raise HTTPException(
+        503,
+        "AI belum dikonfigurasi. Atur GROQ_API_KEY di SnapDeploy."
+    )
 
     suffix = Path(file.filename or "video.mp4").suffix.lower()
     if suffix not in {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}:
