@@ -1,0 +1,13 @@
+.gradle/
+.idea/
+local.properties
+**/build/
+**/.venv/
+**/__pycache__/
+.pytest_cache/
+backend/uploads/*
+backend/outputs/*
+backend/jobs/*
+!backend/uploads/.gitkeep
+!backend/outputs/.gitkeep
+!backend/jobs/.gitkeep
