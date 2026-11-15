@@ -597,21 +597,3 @@ private suspend fun reviseClip(
         apiUrl(item.optString("subtitle_url"))
     )
 }
-
-    val document = DocumentFile.fromSingleUri(ctx, uri)
-    val name = document?.name ?: "video.mp4"
-
-    val videoBody = object : RequestBody() {
-        override fun contentType() = "video/mp4".toMediaType()
-
-        override fun contentLength() = document?.length() ?: -1L
-
-        override fun writeTo(sink: BufferedSink) {
-            val stream = ctx.contentResolver.openInputStream(uri)
-                ?: error("Tidak dapat membaca video.")
-
-            stream.source().use { source ->
-                sink.writeAll(source)
-            }
-        }
-    }
