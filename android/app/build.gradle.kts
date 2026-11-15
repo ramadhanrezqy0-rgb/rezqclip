@@ -6,7 +6,7 @@ plugins {
 
 val apiBaseUrl = providers.gradleProperty("AUTOCLIP_API_BASE_URL")
     .orElse(providers.environmentVariable("AUTOCLIP_API_BASE_URL"))
-    .orElse("http://10.0.2.2:8000/")
+    .orElse("https://rezqclip-c85d5.containers.snapdeploy.app/")
 
 android {
     namespace = "com.example.autoclipai"
