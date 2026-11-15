@@ -43,14 +43,12 @@ def duration(path):
     return probe_video(path)
 
 
-def openai_client():
 def groq_client():
     try:
         from groq import Groq
     except ImportError as exc:
         raise RuntimeError(
-            "Paket groq belum terpasang. "
-            "Tambahkan groq di requirements.txt."
+            "Paket groq belum terpasang. Tambahkan groq di requirements.txt."
         ) from exc
 
     key = os.getenv("GROQ_API_KEY")
@@ -59,7 +57,12 @@ def groq_client():
 
     return Groq(api_key=key)
 
-
+def stamp(t):
+    ms = int(max(0, t) * 1000)
+    h, ms = divmod(ms, 3600000)
+    m, ms = divmod(ms, 60000)
+    s, ms = divmod(ms, 1000)
+    return f"{h:02}:{m:02}:{s:02},{ms:03}"
 def transcribe(source):
     audio_dir = UPLOADS / f"{source.stem}_audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
@@ -108,15 +111,6 @@ def transcribe(source):
     finally:
         shutil.rmtree(audio_dir, ignore_errors=True)
 
-
-def stamp(t):
-    ms = int(max(0, t) * 1000)
-    h, ms = divmod(ms, 3600000)
-    m, ms = divmod(ms, 60000)
-    s, ms = divmod(ms, 1000)
-    return f"{h:02}:{m:02}:{s:02},{ms:03}"
-
-
 def write_srt(segments, start, end, path):
     lines, n = [], 1
     for seg in segments:
@@ -129,8 +123,6 @@ def write_srt(segments, start, end, path):
     path.write_text("\n".join(lines), encoding="utf-8")
     return n - 1
 
-
-def choose_ranges(transcript_segments, instruction, total, count, max_len):
 def choose_ranges(transcript_segments, instruction, total, count, max_len):
     transcript = "\n".join(
         f'[{s["start"]:.1f}-{s["end"]:.1f}] {s["text"]}'
