@@ -107,14 +107,14 @@ fun AutoClipScreen() {
             ) {
                 item {
                     Text(
-                        "AutoClip AI",
+                        text = "AutoClip AI",
                         style = MaterialTheme.typography.headlineLarge
                     )
 
                     Text("Editor video pendek dengan bantuan AI")
 
                     Text(
-                        serverStatus,
+                        text = serverStatus,
                         style = MaterialTheme.typography.labelMedium
                     )
 
@@ -149,22 +149,16 @@ fun AutoClipScreen() {
                                 Text("UPLOAD VIDEO")
                             }
 
-                            val selectedUri = sourceUri
-
                             Text(
-                                if (selectedUri != null) {
-                                    DocumentFile.fromSingleUri(
-                                        context,
-                                        selectedUri
-                                    )?.name ?: "Video dipilih"
-                                } else {
-                                    "Belum ada video"
-                                }
+                                text = sourceUri?.let {
+                                    DocumentFile.fromSingleUri(context, it)?.name
+                                        ?: "Video dipilih"
+                                } ?: "Belum ada video"
                             )
 
-                            if (selectedUri != null) {
+                            sourceUri?.let { uri ->
                                 VideoPreview(
-                                    uri = selectedUri,
+                                    uri = uri,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(210.dp)
@@ -200,9 +194,7 @@ fun AutoClipScreen() {
                                 onValueChange = {
                                     count = it.filter(Char::isDigit).take(2)
                                 },
-                                label = {
-                                    Text("Jumlah clip (1–10)")
-                                },
+                                label = { Text("Jumlah clip (1–10)") },
                                 modifier = Modifier.fillMaxWidth()
                             )
 
@@ -211,9 +203,7 @@ fun AutoClipScreen() {
                                 onValueChange = {
                                     maxDuration = it.filter(Char::isDigit).take(3)
                                 },
-                                label = {
-                                    Text("Durasi maksimal (8–180 detik)")
-                                },
+                                label = { Text("Durasi maksimal (8–180 detik)") },
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -336,9 +326,7 @@ fun AutoClipScreen() {
                                     style = MaterialTheme.typography.titleSmall
                                 )
 
-                                Text(
-                                    "Mulai: ${"%.1f".format(editStart)} detik"
-                                )
+                                Text("Mulai: ${"%.1f".format(editStart)} detik")
 
                                 Slider(
                                     value = editStart.coerceIn(
@@ -352,9 +340,7 @@ fun AutoClipScreen() {
                                         .coerceAtLeast(0.1f)
                                 )
 
-                                Text(
-                                    "Akhir: ${"%.1f".format(editEnd)} detik"
-                                )
+                                Text("Akhir: ${"%.1f".format(editEnd)} detik")
 
                                 Slider(
                                     value = editEnd.coerceIn(
@@ -369,9 +355,7 @@ fun AutoClipScreen() {
 
                                 OutlinedTextField(
                                     value = editSubtitle,
-                                    onValueChange = {
-                                        editSubtitle = it
-                                    },
+                                    onValueChange = { editSubtitle = it },
                                     label = {
                                         Text("Ganti subtitle (opsional)")
                                     },
@@ -400,7 +384,7 @@ fun AutoClipScreen() {
                                                 }
 
                                                 previewUrl = revised.url
-                                                status = "Revisi berhasil dibuat. Putar hasil clip untuk memeriksa."
+                                                status = "Revisi berhasil dibuat."
                                             } catch (e: Exception) {
                                                 status = "Revisi gagal: ${e.message}"
                                             } finally {
@@ -468,7 +452,8 @@ private val http = OkHttpClient.Builder()
     .build()
 
 private fun apiUrl(path: String): String {
-    return BuildConfig.API_BASE_URL.trimEnd('/') + "/" + path.trimStart('/')
+    return BuildConfig.API_BASE_URL.trimEnd('/') +
+        "/" + path.trimStart('/')
 }
 
 private suspend fun checkServer(): String =
@@ -529,4 +514,27 @@ private suspend fun processVideo(
             "clip_count",
             count.coerceIn(1, 10).toString()
         )
-    
+        .addFormDataPart(
+            "max_duration",
+            maxDuration.coerceIn(8, 180).toString()
+        )
+        .build()
+
+    val response = http.newCall(
+        Request.Builder()
+            .url(apiUrl("process"))
+            .post(body)
+            .build()
+    ).execute()
+
+    val raw = response.body?.string().orEmpty()
+
+    if (!response.isSuccessful) {
+        error("Server ${response.code}: $raw")
+    }
+
+    val json = JSONObject(raw)
+    val array = json.getJSONArray("clips")
+
+    val resultClips = (0 until array.length()).map { i ->
+        val item = array.getJSONObject(
