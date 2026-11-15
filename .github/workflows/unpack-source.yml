@@ -18,7 +18,15 @@ jobs:
         run: |
           mkdir -p /tmp/autoclip
           unzip -o AutoClipAI_v0.6_source.zip -d /tmp/autoclip
-          cp -a /tmp/autoclip/AutoClipAI/. .
+
+          if [ ! -d "/tmp/autoclip/AutoClipAI" ]; then
+            echo "Folder AutoClipAI tidak ditemukan!"
+            exit 1
+          fi
+
+          rsync -a \
+            --exclude='/.github/' \
+            /tmp/autoclip/AutoClipAI/ ./
 
       - name: Commit extracted files
         run: |
