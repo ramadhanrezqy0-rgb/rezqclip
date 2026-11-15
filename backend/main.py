@@ -10,7 +10,7 @@ MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "300")) * 1024 * 1024
 for folder in (UPLOADS, OUTPUTS, JOBS):
     folder.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="AutoClip AI API", version="0.5.0")
+app = FastAPI(title="AutoClip AI API", version="0.6.0")
 app.mount("/clips", StaticFiles(directory=OUTPUTS), name="clips")
 app.mount("/subtitles", StaticFiles(directory=OUTPUTS), name="subtitles")
 
