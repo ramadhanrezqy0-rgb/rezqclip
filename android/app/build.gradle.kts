@@ -11,17 +11,31 @@ val apiBaseUrl = providers.gradleProperty("AUTOCLIP_API_BASE_URL")
 android {
     namespace = "com.example.autoclipai"
     compileSdk = 35
+
     defaultConfig {
         applicationId = "com.example.autoclipai"
         minSdk = 26
         targetSdk = 35
         versionCode = 5
         versionName = "0.5.0"
-        // Override with -PAUTOCLIP_API_BASE_URL=https://your-domain/
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.get()}\"")
-        manifestPlaceholders["usesCleartextTraffic"] = (!apiBaseUrl.get().startsWith("https://")).toString()
+        manifestPlaceholders["usesCleartextTraffic"] =
+            (!apiBaseUrl.get().startsWith("https://")).toString()
     }
-    buildFeatures { compose = true; buildConfig = true }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {
